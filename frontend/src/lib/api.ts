@@ -140,3 +140,43 @@ export const kbApi = {
   reindexDocument: (docId: string) =>
     api<DocumentItem>(`/api/documents/${docId}/reindex`, { method: "POST" }),
 };
+
+async function fetchDocumentFile(docId: string, download = false): Promise<Blob> {
+  const headers: Record<string, string> = {};
+  const token = getToken();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const qs = download ? "?download=true" : "";
+  const res = await fetch(`${API_BASE_URL}/api/documents/${docId}/file${qs}`, { headers });
+
+  if (res.status === 401) {
+    clearSession();
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
+    throw new ApiError(401, "Session expired. Please sign in again.");
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, await parseError(res));
+  }
+
+  return res.blob();
+}
+
+export async function viewDocument(doc: DocumentItem): Promise<void> {
+  const blob = await fetchDocumentFile(doc.id);
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function downloadDocument(doc: DocumentItem): Promise<void> {
+  const blob = await fetchDocumentFile(doc.id, true);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = doc.filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

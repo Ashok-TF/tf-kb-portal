@@ -8,13 +8,15 @@ import {
   RefreshCw,
   Loader2,
   Trash2,
-  Search,
+  // Search,
   FileText,
   Building2,
   RotateCw,
+  Download,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+// import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RequireAuth } from "@/components/layout/require-auth";
@@ -23,7 +25,9 @@ import {
   kbApi,
   type DocumentItem,
   type KnowledgeBase,
-  type SearchMatch,
+  // type SearchMatch,
+  viewDocument,
+  downloadDocument,
 } from "@/lib/api";
 import { formatBytes, formatRelativeTime } from "@/lib/utils";
 
@@ -41,9 +45,12 @@ function KbDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [matches, setMatches] = useState<SearchMatch[] | null>(null);
+  // Search — commented out for now; uncomment to re-enable semantic search UI.
+  // const [query, setQuery] = useState("");
+  // const [searching, setSearching] = useState(false);
+  // const [matches, setMatches] = useState<SearchMatch[] | null>(null);
+
+  const [fileActionId, setFileActionId] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -89,17 +96,41 @@ function KbDetail() {
     };
   }, [docs, loadDocs]);
 
-  async function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    if (!query.trim()) return;
-    setSearching(true);
+  // async function handleSearch(e: React.FormEvent) {
+  //   e.preventDefault();
+  //   if (!query.trim()) return;
+  //   setSearching(true);
+  //   try {
+  //     const res = await kbApi.search(id, query, 8);
+  //     setMatches(res.matches);
+  //   } catch (err) {
+  //     setError(err instanceof Error ? err.message : "Search failed");
+  //   } finally {
+  //     setSearching(false);
+  //   }
+  // }
+
+  async function handleViewDoc(doc: DocumentItem) {
+    setFileActionId(doc.id);
+    setError(null);
     try {
-      const res = await kbApi.search(id, query, 8);
-      setMatches(res.matches);
+      await viewDocument(doc);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+      setError(err instanceof Error ? err.message : "Failed to open file");
     } finally {
-      setSearching(false);
+      setFileActionId(null);
+    }
+  }
+
+  async function handleDownloadDoc(doc: DocumentItem) {
+    setFileActionId(doc.id);
+    setError(null);
+    try {
+      await downloadDocument(doc);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setFileActionId(null);
     }
   }
 
@@ -157,7 +188,7 @@ function KbDetail() {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6">
         <Card>
           <CardContent className="p-5">
             <h2 className="mb-3 font-semibold">Upload documents</h2>
@@ -165,6 +196,7 @@ function KbDetail() {
           </CardContent>
         </Card>
 
+        {/* Search — commented out for now; uncomment to re-enable.
         <Card>
           <CardContent className="p-5">
             <h2 className="mb-3 font-semibold">Search this knowledge base</h2>
@@ -201,6 +233,7 @@ function KbDetail() {
             )}
           </CardContent>
         </Card>
+        */}
       </div>
 
       <Card>
@@ -227,7 +260,33 @@ function KbDetail() {
                   {docs.map((doc) => (
                     <tr key={doc.id} className="border-b last:border-0">
                       <td className="py-2.5 pr-3">
-                        <span className="font-medium">{doc.filename}</span>
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleViewDoc(doc)}
+                            disabled={fileActionId === doc.id}
+                            className="group inline-flex min-w-0 flex-1 items-center gap-1.5 text-left font-medium transition-colors hover:text-primary disabled:opacity-50"
+                            title="View file"
+                          >
+                            <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                            <span className="truncate underline-offset-2 group-hover:underline">
+                              {doc.filename}
+                            </span>
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            title="Download"
+                            onClick={() => handleDownloadDoc(doc)}
+                            disabled={fileActionId === doc.id}
+                          >
+                            {fileActionId === doc.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                            ) : (
+                              <Download className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                            )}
+                          </Button>
+                        </div>
                         {doc.status === "failed" && doc.error && (
                           <p className="mt-0.5 text-xs text-destructive">{doc.error}</p>
                         )}
@@ -246,6 +305,17 @@ function KbDetail() {
                         {formatRelativeTime(doc.created_at)}
                       </td>
                       <td className="py-2.5 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="View"
+                          className="mr-1 h-8 px-2"
+                          onClick={() => handleViewDoc(doc)}
+                          disabled={fileActionId === doc.id}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon-sm"

@@ -7,9 +7,11 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -119,6 +121,32 @@ def get_document(
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return doc
+
+
+@router.get("/documents/{document_id}/file")
+def get_document_file(
+    document_id: str,
+    download: bool = Query(False, description="Force download instead of inline preview"),
+    db: Session = Depends(get_db),
+    _: str = Depends(current_user),
+) -> FileResponse:
+    doc = db.get(Document, document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.storage_path:
+        raise HTTPException(status_code=404, detail="File not available")
+    path = Path(doc.storage_path)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    disposition = "attachment" if download else "inline"
+    media_type = doc.content_type or "application/octet-stream"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=doc.filename,
+        content_disposition_type=disposition,
+    )
 
 
 @router.post("/documents/{document_id}/reindex", response_model=DocumentOut, status_code=202)
