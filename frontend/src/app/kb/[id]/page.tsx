@@ -14,6 +14,7 @@ import {
   RotateCw,
   Download,
   Eye,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 // import { Input } from "@/components/ui/input";
@@ -21,11 +22,13 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { RequireAuth } from "@/components/layout/require-auth";
 import { UploadZone } from "@/components/kb/upload-zone";
+import { CrawlSiteCard } from "@/components/kb/crawl-site-card";
+import { ChatPanel } from "@/components/kb/chat-panel";
+import { DocumentPreviewModal } from "@/components/kb/document-preview-modal";
 import {
   kbApi,
   type DocumentItem,
   type KnowledgeBase,
-  // type SearchMatch,
   viewDocument,
   downloadDocument,
 } from "@/lib/api";
@@ -51,6 +54,13 @@ function KbDetail() {
   // const [matches, setMatches] = useState<SearchMatch[] | null>(null);
 
   const [fileActionId, setFileActionId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"documents" | "chat">("documents");
+  const [preview, setPreview] = useState<{
+    open: boolean;
+    title: string;
+    url: string | null;
+    message: string | null;
+  }>({ open: false, title: "", url: null, message: null });
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -114,12 +124,22 @@ function KbDetail() {
     setFileActionId(doc.id);
     setError(null);
     try {
-      await viewDocument(doc);
+      const result = await viewDocument(doc);
+      if (result.mode === "iframe") {
+        setPreview({ open: true, title: doc.filename, url: result.url, message: null });
+      } else {
+        setPreview({ open: true, title: doc.filename, url: null, message: result.message });
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to open file");
     } finally {
       setFileActionId(null);
     }
+  }
+
+  function closePreview() {
+    if (preview.url) URL.revokeObjectURL(preview.url);
+    setPreview({ open: false, title: "", url: null, message: null });
   }
 
   async function handleDownloadDoc(doc: DocumentItem) {
@@ -186,9 +206,50 @@ function KbDetail() {
         </Button>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <div className="flex gap-2 border-b">
+        <button
+          type="button"
+          onClick={() => setTab("documents")}
+          className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+            tab === "documents"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Documents
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("chat")}
+          className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+            tab === "chat"
+              ? "border-primary text-foreground"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Chat
+        </button>
+      </div>
 
-      <div className="grid gap-6">
+      {error && (
+        <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{error}</span>
+          <Button variant="ghost" size="icon-sm" onClick={() => setError(null)}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {tab === "chat" ? (
+        <Card>
+          <CardContent className="p-5">
+            <h2 className="mb-3 font-semibold">Ask this knowledge base</h2>
+            <ChatPanel kbId={id} documents={docs} />
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+      <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardContent className="p-5">
             <h2 className="mb-3 font-semibold">Upload documents</h2>
@@ -196,44 +257,12 @@ function KbDetail() {
           </CardContent>
         </Card>
 
-        {/* Search — commented out for now; uncomment to re-enable.
         <Card>
           <CardContent className="p-5">
-            <h2 className="mb-3 font-semibold">Search this knowledge base</h2>
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Ask a question or enter keywords..."
-              />
-              <Button type="submit" disabled={searching || !query.trim()}>
-                {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-              </Button>
-            </form>
-
-            {matches && (
-              <div className="mt-4 space-y-2">
-                {matches.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No matches found.</p>
-                ) : (
-                  matches.map((m, i) => (
-                    <div key={`${m.document_id}-${m.chunk_index}-${i}`} className="rounded-md border p-3">
-                      <div className="mb-1 flex items-center justify-between text-xs text-muted-foreground">
-                        <span className="inline-flex items-center gap-1 truncate">
-                          <FileText className="h-3 w-3" />
-                          {m.filename}
-                        </span>
-                        <Badge variant="outline">score {m.score.toFixed(3)}</Badge>
-                      </div>
-                      <p className="line-clamp-4 text-sm">{m.text}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
+            <h2 className="mb-3 font-semibold">Crawl website</h2>
+            <CrawlSiteCard kbId={id} onStarted={loadDocs} />
           </CardContent>
         </Card>
-        */}
       </div>
 
       <Card>
@@ -341,6 +370,16 @@ function KbDetail() {
           )}
         </CardContent>
       </Card>
+        </>
+      )}
+
+      <DocumentPreviewModal
+        open={preview.open}
+        title={preview.title}
+        url={preview.url}
+        message={preview.message}
+        onClose={closePreview}
+      />
     </div>
   );
 }

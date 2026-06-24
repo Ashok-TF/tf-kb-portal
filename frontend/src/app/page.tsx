@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Building2,
   X,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +32,8 @@ function Dashboard() {
   const [description, setDescription] = useState("");
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingKb, setEditingKb] = useState<KnowledgeBase | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +65,25 @@ function Dashboard() {
       setError(err instanceof Error ? err.message : "Failed to create knowledge base");
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingKb) return;
+    setSaving(true);
+    try {
+      await kbApi.update(editingKb.id, {
+        name: editingKb.name,
+        description: editingKb.description ?? undefined,
+        department: editingKb.department ?? undefined,
+      });
+      setEditingKb(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -145,7 +167,58 @@ function Dashboard() {
         </Card>
       )}
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <div className="flex items-center justify-between rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+          <span>{error}</span>
+          <Button variant="ghost" size="icon-sm" onClick={() => setError(null)}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {editingKb && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-semibold">Edit knowledge base</h2>
+              <Button variant="ghost" size="icon-sm" onClick={() => setEditingKb(null)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <form onSubmit={handleUpdate} className="space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Name</label>
+                  <Input
+                    value={editingKb.name}
+                    onChange={(e) => setEditingKb({ ...editingKb, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Department</label>
+                  <Input
+                    value={editingKb.department ?? ""}
+                    onChange={(e) => setEditingKb({ ...editingKb, department: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">Description</label>
+                <Textarea
+                  value={editingKb.description ?? ""}
+                  onChange={(e) => setEditingKb({ ...editingKb, description: e.target.value })}
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={saving || !editingKb.name.trim()}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -184,6 +257,14 @@ function Dashboard() {
                       </span>
                     )}
                   </Link>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Edit"
+                    onClick={() => setEditingKb(kb)}
+                  >
+                    <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
                   <Button
                     variant="ghost"
                     size="icon-sm"

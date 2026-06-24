@@ -16,6 +16,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth import current_user
+from app.services.access import ensure_kb_access
+from app.services.audit import log_audit
 from app.config import Settings, get_settings
 from app.database import get_db
 from app.models import Document, KnowledgeBase
@@ -35,10 +37,9 @@ ALLOWED_EXTENSIONS = {
 
 @router.get("/knowledge-bases/{kb_id}/documents", response_model=list[DocumentOut])
 def list_documents(
-    kb_id: str, db: Session = Depends(get_db), _: str = Depends(current_user)
+    kb_id: str, db: Session = Depends(get_db), email: str = Depends(current_user)
 ) -> list[Document]:
-    if db.get(KnowledgeBase, kb_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    ensure_kb_access(db, email, kb_id)
     return list(
         db.scalars(
             select(Document)
@@ -59,10 +60,9 @@ def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
-    _: str = Depends(current_user),
+    email: str = Depends(current_user),
 ) -> Document:
-    if db.get(KnowledgeBase, kb_id) is None:
-        raise HTTPException(status_code=404, detail="Knowledge base not found")
+    ensure_kb_access(db, email, kb_id)
 
     filename = file.filename or "upload"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -110,16 +110,18 @@ def upload_document(
 
     # Kick off async processing.
     background_tasks.add_task(process_document, doc.id)
+    log_audit(db, user_email=email, action="upload", kb_id=kb_id, document_id=doc.id, detail=filename)
     return doc
 
 
 @router.get("/documents/{document_id}", response_model=DocumentOut)
 def get_document(
-    document_id: str, db: Session = Depends(get_db), _: str = Depends(current_user)
+    document_id: str, db: Session = Depends(get_db), email: str = Depends(current_user)
 ) -> Document:
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    ensure_kb_access(db, email, doc.kb_id)
     return doc
 
 
@@ -128,11 +130,12 @@ def get_document_file(
     document_id: str,
     download: bool = Query(False, description="Force download instead of inline preview"),
     db: Session = Depends(get_db),
-    _: str = Depends(current_user),
+    email: str = Depends(current_user),
 ) -> FileResponse:
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    ensure_kb_access(db, email, doc.kb_id)
     if not doc.storage_path:
         raise HTTPException(status_code=404, detail="File not available")
     path = Path(doc.storage_path)
@@ -141,6 +144,14 @@ def get_document_file(
 
     disposition = "attachment" if download else "inline"
     media_type = doc.content_type or "application/octet-stream"
+    log_audit(
+        db,
+        user_email=email,
+        action="file_download" if download else "file_view",
+        kb_id=doc.kb_id,
+        document_id=doc.id,
+        detail=doc.filename,
+    )
     return FileResponse(
         path,
         media_type=media_type,
@@ -168,17 +179,19 @@ def reindex_document(
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_document(
-    document_id: str, db: Session = Depends(get_db), _: str = Depends(current_user)
+    document_id: str, db: Session = Depends(get_db), email: str = Depends(current_user)
 ) -> None:
     doc = db.get(Document, document_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    ensure_kb_access(db, email, doc.kb_id)
 
     kb_id = doc.kb_id
     if doc.storage_path:
         Path(doc.storage_path).unlink(missing_ok=True)
     db.delete(doc)
     db.commit()
+    log_audit(db, user_email=email, action="delete", kb_id=kb_id, document_id=document_id)
     try:
         delete_document_vectors(kb_id, document_id)
     except Exception:

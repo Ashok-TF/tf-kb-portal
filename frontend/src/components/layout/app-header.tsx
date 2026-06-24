@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, LogOut } from "lucide-react";
+import { BookOpen, LogOut, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clearSession, getEmail } from "@/lib/api";
 import { useEffect, useState } from "react";
@@ -32,7 +32,13 @@ export function AppHeader() {
             <span className="text-sm font-semibold">KB Portal</span>
           </div>
         </Link>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <Link href="/chat">
+            <Button variant="ghost" size="sm">
+              <MessageSquare className="h-4 w-4 mr-1.5" />
+              Chat
+            </Button>
+          </Link>
           {email && <span className="text-sm text-muted-foreground hidden sm:inline">{email}</span>}
           <Button variant="ghost" size="sm" onClick={handleLogout}>
             <LogOut className="h-4 w-4 mr-1.5" />

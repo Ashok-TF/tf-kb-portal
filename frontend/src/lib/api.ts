@@ -106,9 +106,44 @@ export interface DocumentItem {
   chunk_count: number;
   char_count: number;
   error: string | null;
+  summary?: string | null;
+  entities_json?: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export interface ChatCitation {
+  document_id: string;
+  filename: string;
+  kb_id: string;
+  kb_name?: string | null;
+  chunk_index: number;
+  score: number;
+  excerpt: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  citations: ChatCitation[];
+  selected_kbs?: { id: string; name: string; score: number }[];
+}
+
+export interface AuditLogItem {
+  id: string;
+  user_email: string;
+  action: string;
+  kb_id: string | null;
+  document_id: string | null;
+  detail: string | null;
+  created_at: string;
+}
+
+export type PreviewResult =
+  | { mode: "iframe"; url: string }
+  | { mode: "unsupported"; message: string };
+
+const OFFICE_EXTENSIONS = new Set(["doc", "docx", "ppt", "pptx", "xls", "xlsx", "xlsm"]);
+const PREVIEWABLE_EXTENSIONS = new Set(["pdf", "png", "jpg", "jpeg", "gif", "webp", "txt", "md", "csv"]);
 
 export interface SearchMatch {
   document_id: string;
@@ -123,6 +158,8 @@ export const kbApi = {
   get: (id: string) => api<KnowledgeBase>(`/api/knowledge-bases/${id}`),
   create: (body: { name: string; description?: string; department?: string }) =>
     api<KnowledgeBase>("/api/knowledge-bases", { method: "POST", body }),
+  update: (id: string, body: { name?: string; description?: string; department?: string }) =>
+    api<KnowledgeBase>(`/api/knowledge-bases/${id}`, { method: "PATCH", body }),
   remove: (id: string) => api<void>(`/api/knowledge-bases/${id}`, { method: "DELETE" }),
   documents: (id: string) => api<DocumentItem[]>(`/api/knowledge-bases/${id}/documents`),
   upload: (id: string, formData: FormData) =>
@@ -139,6 +176,19 @@ export const kbApi = {
   deleteDocument: (docId: string) => api<void>(`/api/documents/${docId}`, { method: "DELETE" }),
   reindexDocument: (docId: string) =>
     api<DocumentItem>(`/api/documents/${docId}/reindex`, { method: "POST" }),
+  chat: (id: string, query: string, topK = 5) =>
+    api<ChatResponse>(`/api/knowledge-bases/${id}/chat`, {
+      method: "POST",
+      body: { query, top_k: topK },
+    }),
+  crawl: (id: string, url: string, maxDepth: number) =>
+    api<{ status: string; message: string }>(`/api/knowledge-bases/${id}/crawl`, {
+      method: "POST",
+      body: { url, max_depth: maxDepth },
+    }),
+  globalChat: (query: string, topK = 5) =>
+    api<ChatResponse>("/api/chat", { method: "POST", body: { query, top_k: topK } }),
+  auditLogs: (limit = 100) => api<AuditLogItem[]>(`/api/admin/audit?limit=${limit}`),
 };
 
 async function fetchDocumentFile(docId: string, download = false): Promise<Blob> {
@@ -164,11 +214,27 @@ async function fetchDocumentFile(docId: string, download = false): Promise<Blob>
   return res.blob();
 }
 
-export async function viewDocument(doc: DocumentItem): Promise<void> {
+export async function getDocumentPreview(doc: DocumentItem): Promise<PreviewResult> {
+  const ext = (doc.file_extension || doc.filename.split(".").pop() || "").toLowerCase();
+  if (OFFICE_EXTENSIONS.has(ext)) {
+    return {
+      mode: "unsupported",
+      message: "Preview is not supported for Office files in the browser. Please use Download.",
+    };
+  }
+  if (!PREVIEWABLE_EXTENSIONS.has(ext)) {
+    return {
+      mode: "unsupported",
+      message: `Preview is not available for .${ext} files. Please use Download.`,
+    };
+  }
   const blob = await fetchDocumentFile(doc.id);
   const url = URL.createObjectURL(blob);
-  window.open(url, "_blank", "noopener,noreferrer");
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return { mode: "iframe", url };
+}
+
+export async function viewDocument(doc: DocumentItem): Promise<PreviewResult> {
+  return getDocumentPreview(doc);
 }
 
 export async function downloadDocument(doc: DocumentItem): Promise<void> {

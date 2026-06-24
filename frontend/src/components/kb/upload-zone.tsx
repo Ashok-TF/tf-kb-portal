@@ -21,7 +21,7 @@ interface UploadZoneProps {
 interface Entry {
   file: File;
   id: string;
-  status: "queued" | "uploading" | "done" | "error";
+  status: "queued" | "uploading" | "processing" | "done" | "error";
   error?: string;
 }
 
@@ -65,6 +65,11 @@ export function UploadZone({ kbId, onUploaded }: UploadZoneProps) {
           const formData = new FormData();
           formData.append("file", entry.file);
           await kbApi.upload(kbId, formData);
+          setEntries((prev) =>
+            prev.map((e) => (e.id === entry.id ? { ...e, status: "processing" } : e))
+          );
+          // Brief processing animation before handoff to server polling
+          await new Promise((r) => setTimeout(r, 600));
           setEntries((prev) =>
             prev.map((e) => (e.id === entry.id ? { ...e, status: "done" } : e))
           );
@@ -150,6 +155,9 @@ export function UploadZone({ kbId, onUploaded }: UploadZoneProps) {
                 </Button>
               )}
               {entry.status === "uploading" && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
+              {entry.status === "processing" && (
+                <span className="text-xs text-amber-600 animate-pulse">Processing…</span>
+              )}
               {entry.status === "done" && <CheckCircle2 className="h-4 w-4 text-green-600" />}
               {entry.status === "error" && <AlertCircle className="h-4 w-4 text-destructive" />}
             </div>

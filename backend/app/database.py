@@ -41,3 +41,27 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _migrate_sqlite_columns()
+
+
+def _migrate_sqlite_columns() -> None:
+    """Add new columns to existing SQLite DBs (create_all does not alter tables)."""
+    if not settings.database_url.startswith("sqlite"):
+        return
+    from sqlalchemy import text
+
+    alters = [
+        "ALTER TABLE documents ADD COLUMN summary TEXT",
+        "ALTER TABLE documents ADD COLUMN entities_json TEXT",
+        "ALTER TABLE documents ADD COLUMN source_url VARCHAR(2048)",
+        "ALTER TABLE knowledge_bases ADD COLUMN status VARCHAR(32) DEFAULT 'active'",
+        "ALTER TABLE knowledge_bases ADD COLUMN search_provider VARCHAR(64) DEFAULT 'local'",
+        "ALTER TABLE knowledge_bases ADD COLUMN index_artifacts INTEGER DEFAULT 0",
+        "ALTER TABLE knowledge_bases ADD COLUMN index_wikis INTEGER DEFAULT 0",
+    ]
+    with engine.begin() as conn:
+        for stmt in alters:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass

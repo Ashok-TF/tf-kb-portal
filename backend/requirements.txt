@@ -23,3 +23,4 @@ numpy==2.2.1
 # Uncomment / install these when you switch to real embeddings + Pinecone:
 openai==1.59.6              # EMBEDDING_PROVIDER=openai
 pinecone==5.4.2             # VECTOR_STORE=pinecone
+psycopg[binary]==3.2.9      # Postgres (optional, for docker-compose)

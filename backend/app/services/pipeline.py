@@ -13,11 +13,13 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.database import SessionLocal
-from app.models import Document
+from app.models import Chunk, Document
 from app.services.chunk import chunk_text
 from app.services.embeddings import get_embedder
+from app.services.enrichment import enrich_document
 from app.services.extract import ExtractionError, extract_text
 from app.services.vectorstore import VectorRecord, get_vector_store
+from app.services.wiki import refresh_wiki_for_kb
 
 logger = logging.getLogger("kb.pipeline")
 
@@ -54,6 +56,15 @@ def process_document(document_id: str) -> None:
             _fail(db, doc, "No extractable text content found in the file.")
             return
 
+        # Replace prior chunks for this document
+        for old in db.query(Chunk).filter(Chunk.document_id == doc.id).all():
+            db.delete(old)
+        db.commit()
+
+        summary, entities_json = enrich_document(settings, text, doc.filename)
+        doc.summary = summary
+        doc.entities_json = entities_json
+
         try:
             embedder = get_embedder(settings)
             vectors = embedder.embed(chunks)
@@ -83,11 +94,25 @@ def process_document(document_id: str) -> None:
             _fail(db, doc, f"Vector upsert failed: {exc}")
             return
 
+        for i, chunk_text_val in enumerate(chunks):
+            db.add(
+                Chunk(
+                    document_id=doc.id,
+                    kb_id=doc.kb_id,
+                    chunk_index=i,
+                    text=chunk_text_val[:8000],
+                )
+            )
+
         doc.status = "ready"
         doc.chunk_count = len(chunks)
         doc.char_count = char_count
         doc.error = None
         db.commit()
+        try:
+            refresh_wiki_for_kb(db, doc.kb_id)
+        except Exception:  # noqa: BLE001
+            pass
         logger.info("Processed document %s: %d chunks", doc.id, len(chunks))
     finally:
         db.close()

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
-from app.routers import auth, documents, knowledge_bases, search
+from app.routers import admin, auth, chat, crawl, documents, global_chat, knowledge_bases, search
 
 logging.basicConfig(level=logging.INFO)
 
@@ -40,3 +40,7 @@ app.include_router(auth.router)
 app.include_router(knowledge_bases.router)
 app.include_router(documents.router)
 app.include_router(search.router)
+app.include_router(chat.router)
+app.include_router(global_chat.router)
+app.include_router(crawl.router)
+app.include_router(admin.router)
